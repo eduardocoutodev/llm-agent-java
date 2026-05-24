@@ -3,6 +3,7 @@ import com.openai.models.FunctionDefinition;
 import com.openai.models.FunctionParameters;
 import com.openai.models.chat.completions.ChatCompletionTool;
 import org.jetbrains.annotations.NotNull;
+import tool.callbacks.BashToolCallback;
 import tool.callbacks.ReadToolCallback;
 import tool.callbacks.ToolCallback;
 import tool.callbacks.WriteToolCallback;
