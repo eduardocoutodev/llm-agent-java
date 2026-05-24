@@ -22,7 +22,6 @@ public final class ReadToolCallback implements ToolCallback {
                     false
             );
         } catch (IOException e) {
-            // TODO, should return toolResultError !!
             IO.println("Error while procesing read tool" + e);
             return new ToolResult(
                     toolCallId,
