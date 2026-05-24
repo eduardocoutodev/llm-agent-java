@@ -64,7 +64,7 @@ private static void agenticLoop(
     var toolCallbacks = ToolDefinitions.getToolCallbacks();
 
     while (!isFinalAssistantMessage(response) && currentInteraction < allowedNumberOfLoops) {
-        IO.println("Starting agentic loop, interaction n:" + currentInteraction);
+        //IO.println("Starting agentic loop, interaction n:" + currentInteraction);
         currentInteraction++;
 
         if (response.choices().isEmpty()) {
