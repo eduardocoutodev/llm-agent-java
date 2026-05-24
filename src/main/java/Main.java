@@ -1,7 +1,15 @@
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import tool.ToolCallToInvoke;
+
+import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.STOP;
+import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.TOOL_CALLS;
+
 
 void main(String[] args) {
     if (args.length < 2 || !"-p".equals(args[0])) {
@@ -13,20 +21,7 @@ void main(String[] args) {
 
     var client = buildOpenAIClient();
 
-    var tools = ToolDefinitions.getAvailableTools();
-    ChatCompletion response = client.chat().completions().create(
-            ChatCompletionCreateParams.builder()
-                    .model("anthropic/claude-haiku-4.5")
-                    .addUserMessage(prompt)
-                    .tools(tools)
-                    .build()
-    );
-
-    if (response.choices().isEmpty()) {
-        throw new RuntimeException("no choices in response");
-    }
-
-    IO.print(response.choices().get(0).message().content().orElse(""));
+    agenticLoop(client, prompt);
 }
 
 private static OpenAIClient buildOpenAIClient() {
@@ -44,4 +39,88 @@ private static OpenAIClient buildOpenAIClient() {
             .apiKey(apiKey)
             .baseUrl(baseUrl)
             .build();
+}
+
+private static TypeReference<Map<String, String>> argumentsTypeRef = new TypeReference<>() {
+};
+
+private static void agenticLoop(
+        OpenAIClient client,
+        String userPrompt
+) {
+    var tools = ToolDefinitions.getAvailableTools();
+    var chatClientParams = ChatCompletionCreateParams.builder()
+            .model("anthropic/claude-haiku-4.5")
+            .addUserMessage(userPrompt)
+            .tools(tools)
+            .build();
+
+    var response = client.chat().completions().create(
+            chatClientParams
+    );
+
+    var objectMapper = new ObjectMapper();
+
+    var allowedNumberOfLoops = 1;
+    var currentInteraction = 0;
+    var toolCallbacks = ToolDefinitions.getToolCallbacks();
+
+    while (!isFinalAssistantMessage(response) && currentInteraction < allowedNumberOfLoops) {
+        currentInteraction++;
+
+        if (response.choices().isEmpty()) {
+            throw new RuntimeException("no choices in response");
+        }
+
+        if (!containsToolCalls(response)) {
+            IO.println("No tool call backs to invoke !");
+            continue;
+        }
+
+        var toolCallsToInvoke = response.choices()
+                .stream()
+                .filter(choice -> choice.finishReason().equals(TOOL_CALLS))
+                .flatMap(choice -> {
+                            var toolCalls = choice.message().toolCalls().orElseThrow(() -> new IllegalStateException("Expected Tool call"));
+                            return toolCalls.stream()
+                                    .map(
+                                            toolCall -> {
+                                                try {
+                                                    return new ToolCallToInvoke(
+                                                            toolCall.function().name(),
+                                                            objectMapper.readValue(toolCall.function().arguments(), argumentsTypeRef)
+                                                    );
+                                                } catch (JsonProcessingException e) {
+                                                    IO.println("Error while converting arguments");
+                                                    throw new RuntimeException(e);
+                                                }
+                                            }
+                                    );
+                        }
+                ).toList();
+
+        // To introduce async processing if possible !
+        for (var toolCallback : toolCallsToInvoke) {
+            var tool = toolCallbacks.get(toolCallback.toolName());
+            if (tool == null) {
+                throw new IllegalStateException("Invalid tool invoked " + toolCallback.toolName());
+            }
+
+            tool.execute(toolCallback.arguments());
+        }
+    }
+
+    IO.print(response.choices().get(0).message().content().orElse(""));
+}
+
+private static boolean containsToolCalls(ChatCompletion chatCompletion) {
+    return chatCompletion.choices()
+            .stream()
+            .anyMatch(choice -> choice.finishReason().equals(TOOL_CALLS));
+}
+
+private static boolean isFinalAssistantMessage(ChatCompletion chatCompletion) {
+    return chatCompletion.choices()
+            .stream()
+            .allMatch(choice -> choice.finishReason().equals(STOP));
 }
