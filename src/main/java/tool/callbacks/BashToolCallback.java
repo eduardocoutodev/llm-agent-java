@@ -22,7 +22,7 @@ public final class BashToolCallback implements ToolCallback {
         }
 
         try {
-            var process = new ProcessBuilder(bashCommand)
+            var process = new ProcessBuilder("bash", "-c", bashCommand)
                     .redirectErrorStream(false)
                     .start();
 
