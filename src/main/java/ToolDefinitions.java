@@ -15,14 +15,16 @@ public class ToolDefinitions {
     public static List<ChatCompletionTool> getAvailableTools() {
         return List.of(
                 readToolDefinition(),
-                writeToolDefinition()
+                writeToolDefinition(),
+                bashToolDefinition()
         );
     }
 
     public static Map<String, ToolCallback> getToolCallbacks(){
         return Map.of(
                 "Read", new ReadToolCallback(),
-                "Write", new WriteToolCallback()
+                "Write", new WriteToolCallback(),
+                "Bash", new BashToolCallback()
         );
     }
 
@@ -79,6 +81,33 @@ public class ToolDefinitions {
                                                 )
                                         ))
                                         .putAdditionalProperty("required", JsonValue.from(List.of("file_path", "content")))
+                                        .build()
+                        )
+                        .build()
+                )
+                .build();
+    }
+
+    private static ChatCompletionTool bashToolDefinition() {
+        return ChatCompletionTool.builder()
+                .type(JsonValue.from("function"))
+                .function(FunctionDefinition.builder()
+                        .name("Bash")
+                        .description("Execute a shell command")
+                        .parameters(
+                                FunctionParameters.builder()
+                                        .putAdditionalProperty("type", JsonValue.from("object"))
+                                        .putAdditionalProperty("properties", JsonValue.from(
+                                                Map.of(
+                                                        "command", JsonValue.from(
+                                                                Map.of(
+                                                                        "type", "string",
+                                                                        "description", "The command to execute"
+                                                                )
+                                                        )
+                                                )
+                                        ))
+                                        .putAdditionalProperty("required", JsonValue.from(List.of("command")))
                                         .build()
                         )
                         .build()
