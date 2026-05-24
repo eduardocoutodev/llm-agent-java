@@ -39,13 +39,13 @@ export OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 ## Usage
 
 ```sh
-./your_program.sh -p "your prompt here"
+./run.sh -p "your prompt here"
 ```
 
 Example:
 
 ```sh
-./your_program.sh -p "List all Java files in this directory and count the lines in each one"
+./run.sh -p "List all Java files in this directory and count the lines in each one"
 ```
 
 ## Model
