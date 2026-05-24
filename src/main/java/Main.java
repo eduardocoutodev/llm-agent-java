@@ -12,6 +12,8 @@ import tool.model.ToolResult;
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.STOP;
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.TOOL_CALLS;
 
+// Have this loop, to prevent recursive calls to llm from blowing up my money
+private static final int MAX_NUMBER_LOOP_INTERACTIONS = 15;
 
 void main(String[] args) {
     if (args.length < 2 || !"-p".equals(args[0])) {
@@ -57,12 +59,11 @@ private static void agenticLoop(
 
     var response = invokeLLMApi(client, messages);
 
-    // Have this loop, to prevent recursive calls to llm from blowing up my money
-    var allowedNumberOfLoops = 5;
+
     var currentInteraction = 0;
     var toolCallbacks = ToolDefinitions.getToolCallbacks();
 
-    while (!isFinalAssistantMessage(response) && currentInteraction < allowedNumberOfLoops) {
+    while (!isFinalAssistantMessage(response) && currentInteraction < MAX_NUMBER_LOOP_INTERACTIONS) {
         //IO.println("Starting agentic loop, interaction n:" + currentInteraction);
         currentInteraction++;
 
