@@ -3,12 +3,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.core.JsonValue;
 import com.openai.models.chat.completions.*;
 import kotlin.Pair;
-import tool.Tool;
-import tool.ToolCall;
-import tool.ToolResult;
+import tool.callbacks.ToolCallback;
+import tool.model.ToolCall;
+import tool.model.ToolResult;
 
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.STOP;
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.TOOL_CALLS;
@@ -140,7 +139,7 @@ private static List<ToolCall> convertToolCallBacksToInvoke(ChatCompletion respon
             ).toList();
 }
 
-private static List<ToolResult> invokeToolCallBacks(List<ToolCall> toolCallsToInvoke, Map<String, Tool> toolCallbacks) {
+private static List<ToolResult> invokeToolCallBacks(List<ToolCall> toolCallsToInvoke, Map<String, ToolCallback> toolCallbacks) {
     // To introduce async processing if possible !
     return toolCallsToInvoke.stream()
             .map(toolCallback -> {

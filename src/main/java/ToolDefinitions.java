@@ -3,8 +3,8 @@ import com.openai.models.FunctionDefinition;
 import com.openai.models.FunctionParameters;
 import com.openai.models.chat.completions.ChatCompletionTool;
 import org.jetbrains.annotations.NotNull;
-import tool.ReadTool;
-import tool.Tool;
+import tool.callbacks.ReadToolCallback;
+import tool.callbacks.ToolCallback;
 
 import java.util.List;
 import java.util.Map;
@@ -17,9 +17,9 @@ public class ToolDefinitions {
         );
     }
 
-    public static Map<String, Tool> getToolCallbacks(){
+    public static Map<String, ToolCallback> getToolCallbacks(){
         return Map.of(
-                "Read", new ReadTool()
+                "Read", new ReadToolCallback()
         );
     }
 

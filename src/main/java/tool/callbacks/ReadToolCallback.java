@@ -1,11 +1,13 @@
-package tool;
+package tool.callbacks;
+
+import tool.model.ToolResult;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-public final class ReadTool implements Tool{
+public final class ReadToolCallback implements ToolCallback {
     private static final String FILE_PATH_ARGUMENT = "file_path";
 
     @Override
