@@ -11,20 +11,7 @@ void main(String[] args) {
 
     String prompt = args[1];
 
-    String apiKey = System.getenv("OPENROUTER_API_KEY");
-    String baseUrl = System.getenv("OPENROUTER_BASE_URL");
-    if (baseUrl == null || baseUrl.isEmpty()) {
-        baseUrl = "https://openrouter.ai/api/v1";
-    }
-
-    if (apiKey == null || apiKey.isEmpty()) {
-        throw new RuntimeException("OPENROUTER_API_KEY is not set");
-    }
-
-    OpenAIClient client = OpenAIOkHttpClient.builder()
-            .apiKey(apiKey)
-            .baseUrl(baseUrl)
-            .build();
+    var client = buildOpenAIClient();
 
     var tools = ToolDefinitions.getAvailableTools();
     ChatCompletion response = client.chat().completions().create(
@@ -39,8 +26,22 @@ void main(String[] args) {
         throw new RuntimeException("no choices in response");
     }
 
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    System.err.println("Logs from your program will appear here!");
-
     IO.print(response.choices().get(0).message().content().orElse(""));
+}
+
+private static OpenAIClient buildOpenAIClient() {
+    String apiKey = System.getenv("OPENROUTER_API_KEY");
+    String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+    if (baseUrl == null || baseUrl.isEmpty()) {
+        baseUrl = "https://openrouter.ai/api/v1";
+    }
+
+    if (apiKey == null || apiKey.isEmpty()) {
+        throw new RuntimeException("OPENROUTER_API_KEY is not set");
+    }
+
+    return OpenAIOkHttpClient.builder()
+            .apiKey(apiKey)
+            .baseUrl(baseUrl)
+            .build();
 }
