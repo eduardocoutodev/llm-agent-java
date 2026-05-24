@@ -5,6 +5,8 @@ import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import org.jetbrains.annotations.NotNull;
+import tool.Tool;
 import tool.ToolCallToInvoke;
 
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.STOP;
@@ -41,9 +43,6 @@ private static OpenAIClient buildOpenAIClient() {
             .build();
 }
 
-private static TypeReference<Map<String, String>> argumentsTypeRef = new TypeReference<>() {
-};
-
 private static void agenticLoop(
         OpenAIClient client,
         String userPrompt
@@ -59,8 +58,7 @@ private static void agenticLoop(
             chatClientParams
     );
 
-    var objectMapper = new ObjectMapper();
-
+    // Have this loop, to prevent recursive calls to llm from blowing up my money
     var allowedNumberOfLoops = 1;
     var currentInteraction = 0;
     var toolCallbacks = ToolDefinitions.getToolCallbacks();
@@ -77,37 +75,8 @@ private static void agenticLoop(
             continue;
         }
 
-        var toolCallsToInvoke = response.choices()
-                .stream()
-                .filter(choice -> choice.finishReason().equals(TOOL_CALLS))
-                .flatMap(choice -> {
-                            var toolCalls = choice.message().toolCalls().orElseThrow(() -> new IllegalStateException("Expected Tool call"));
-                            return toolCalls.stream()
-                                    .map(
-                                            toolCall -> {
-                                                try {
-                                                    return new ToolCallToInvoke(
-                                                            toolCall.function().name(),
-                                                            objectMapper.readValue(toolCall.function().arguments(), argumentsTypeRef)
-                                                    );
-                                                } catch (JsonProcessingException e) {
-                                                    IO.println("Error while converting arguments");
-                                                    throw new RuntimeException(e);
-                                                }
-                                            }
-                                    );
-                        }
-                ).toList();
-
-        // To introduce async processing if possible !
-        for (var toolCallback : toolCallsToInvoke) {
-            var tool = toolCallbacks.get(toolCallback.toolName());
-            if (tool == null) {
-                throw new IllegalStateException("Invalid tool invoked " + toolCallback.toolName());
-            }
-
-            tool.execute(toolCallback.arguments());
-        }
+        var toolCallsToInvoke = convertToolCallBacksToInvoke(response);
+        invokeToolCallBacks(toolCallsToInvoke, toolCallbacks);
     }
 
     IO.print(response.choices().get(0).message().content().orElse(""));
@@ -123,4 +92,44 @@ private static boolean isFinalAssistantMessage(ChatCompletion chatCompletion) {
     return chatCompletion.choices()
             .stream()
             .allMatch(choice -> choice.finishReason().equals(STOP));
+}
+
+private static List<ToolCallToInvoke> convertToolCallBacksToInvoke(ChatCompletion response) {
+    var objectMapper = new ObjectMapper();
+    TypeReference<Map<String, String>> argumentsTypeRef = new TypeReference<>() {
+    };
+
+    return response.choices()
+            .stream()
+            .filter(choice -> choice.finishReason().equals(TOOL_CALLS))
+            .flatMap(choice -> {
+                        var toolCalls = choice.message().toolCalls().orElseThrow(() -> new IllegalStateException("Expected Tool call"));
+                        return toolCalls.stream()
+                                .map(
+                                        toolCall -> {
+                                            try {
+                                                return new ToolCallToInvoke(
+                                                        toolCall.function().name(),
+                                                        objectMapper.readValue(toolCall.function().arguments(), argumentsTypeRef)
+                                                );
+                                            } catch (JsonProcessingException e) {
+                                                IO.println("Error while converting arguments");
+                                                throw new RuntimeException(e);
+                                            }
+                                        }
+                                );
+                    }
+            ).toList();
+}
+
+private static void invokeToolCallBacks(List<ToolCallToInvoke> toolCallsToInvoke, Map<String, Tool> toolCallbacks) {
+    // To introduce async processing if possible !
+    for (var toolCallback : toolCallsToInvoke) {
+        var tool = toolCallbacks.get(toolCallback.toolName());
+        if (tool == null) {
+            throw new IllegalStateException("Invalid tool invoked " + toolCallback.toolName());
+        }
+
+        tool.execute(toolCallback.arguments());
+    }
 }
