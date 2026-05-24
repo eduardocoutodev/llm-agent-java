@@ -3,11 +3,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import org.jetbrains.annotations.NotNull;
+import com.openai.core.JsonValue;
+import com.openai.models.chat.completions.*;
+import kotlin.Pair;
 import tool.Tool;
-import tool.ToolCallToInvoke;
+import tool.ToolCall;
+import tool.ToolResult;
 
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.STOP;
 import static com.openai.models.chat.completions.ChatCompletion.Choice.FinishReason.TOOL_CALLS;
@@ -47,23 +48,23 @@ private static void agenticLoop(
         OpenAIClient client,
         String userPrompt
 ) {
-    var tools = ToolDefinitions.getAvailableTools();
-    var chatClientParams = ChatCompletionCreateParams.builder()
-            .model("anthropic/claude-haiku-4.5")
-            .addUserMessage(userPrompt)
-            .tools(tools)
-            .build();
-
-    var response = client.chat().completions().create(
-            chatClientParams
+    var messages = List.of(
+            ChatCompletionMessageParam.ofUser(
+                    ChatCompletionUserMessageParam.builder()
+                            .content(userPrompt)
+                            .build()
+            )
     );
 
+    var response = invokeLLMApi(client, messages);
+
     // Have this loop, to prevent recursive calls to llm from blowing up my money
-    var allowedNumberOfLoops = 1;
+    var allowedNumberOfLoops = 5;
     var currentInteraction = 0;
     var toolCallbacks = ToolDefinitions.getToolCallbacks();
 
     while (!isFinalAssistantMessage(response) && currentInteraction < allowedNumberOfLoops) {
+        IO.println("Starting agentic loop, interaction n:" + currentInteraction);
         currentInteraction++;
 
         if (response.choices().isEmpty()) {
@@ -76,7 +77,10 @@ private static void agenticLoop(
         }
 
         var toolCallsToInvoke = convertToolCallBacksToInvoke(response);
-        invokeToolCallBacks(toolCallsToInvoke, toolCallbacks);
+        var toolResults = invokeToolCallBacks(toolCallsToInvoke, toolCallbacks);
+
+        messages = appendToolResultsToChatContext(messages, toolCallsToInvoke, toolResults);
+        response = invokeLLMApi(client, messages);
     }
 
     IO.print(response.choices().get(0).message().content().orElse(""));
@@ -94,7 +98,20 @@ private static boolean isFinalAssistantMessage(ChatCompletion chatCompletion) {
             .allMatch(choice -> choice.finishReason().equals(STOP));
 }
 
-private static List<ToolCallToInvoke> convertToolCallBacksToInvoke(ChatCompletion response) {
+private static ChatCompletion invokeLLMApi(OpenAIClient client, List<ChatCompletionMessageParam> messages) {
+    var tools = ToolDefinitions.getAvailableTools();
+    var chatClientParams = ChatCompletionCreateParams.builder()
+            .model("anthropic/claude-haiku-4.5")
+            .messages(messages)
+            .tools(tools)
+            .build();
+
+    return client.chat().completions().create(
+            chatClientParams
+    );
+}
+
+private static List<ToolCall> convertToolCallBacksToInvoke(ChatCompletion response) {
     var objectMapper = new ObjectMapper();
     TypeReference<Map<String, String>> argumentsTypeRef = new TypeReference<>() {
     };
@@ -108,8 +125,9 @@ private static List<ToolCallToInvoke> convertToolCallBacksToInvoke(ChatCompletio
                                 .map(
                                         toolCall -> {
                                             try {
-                                                return new ToolCallToInvoke(
+                                                return new ToolCall(
                                                         toolCall.function().name(),
+                                                        toolCall.id(),
                                                         objectMapper.readValue(toolCall.function().arguments(), argumentsTypeRef)
                                                 );
                                             } catch (JsonProcessingException e) {
@@ -122,14 +140,57 @@ private static List<ToolCallToInvoke> convertToolCallBacksToInvoke(ChatCompletio
             ).toList();
 }
 
-private static void invokeToolCallBacks(List<ToolCallToInvoke> toolCallsToInvoke, Map<String, Tool> toolCallbacks) {
+private static List<ToolResult> invokeToolCallBacks(List<ToolCall> toolCallsToInvoke, Map<String, Tool> toolCallbacks) {
     // To introduce async processing if possible !
-    for (var toolCallback : toolCallsToInvoke) {
-        var tool = toolCallbacks.get(toolCallback.toolName());
-        if (tool == null) {
-            throw new IllegalStateException("Invalid tool invoked " + toolCallback.toolName());
-        }
+    return toolCallsToInvoke.stream()
+            .map(toolCallback -> {
+                var tool = toolCallbacks.get(toolCallback.toolName());
+                if (tool == null) {
+                    throw new IllegalStateException("Invalid tool invoked " + toolCallback.toolName());
+                }
 
-        tool.execute(toolCallback.arguments());
+                return tool.execute(toolCallback.toolCallId(), toolCallback.arguments());
+            })
+            .toList();
+}
+
+
+private static List<ChatCompletionMessageParam> appendToolResultsToChatContext(
+        List<ChatCompletionMessageParam> messages,
+        List<ToolCall> toolCallsToInvoke,
+        List<ToolResult> toolResults
+) {
+    Map<ToolCall, ToolResult> toolCallsToToolResultsMap = toolCallsToInvoke.stream()
+            .map(toolCall -> {
+                var toolResultAssociated = toolResults.stream()
+                        .filter(toolResult -> toolCall.toolCallId().equalsIgnoreCase(toolResult.toolCallId()))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException("Corresponding tool result not found"));
+
+                return new Pair<>(toolCall, toolResultAssociated);
+            }).collect(Collectors.toMap(
+                    Pair::getFirst, Pair::getSecond
+            ));
+
+    List<ChatCompletionMessageParam> toolMessagesToAppend = new ArrayList<>();
+    for (var entry : toolCallsToToolResultsMap.entrySet()) {
+        var toolCall = entry.getKey();
+        var toolResult = entry.getValue();
+
+        try {
+            toolMessagesToAppend.add(toolCall.toChatCompletionMessageParam());
+            toolMessagesToAppend.add(toolResult.toChatCompletionMessageParam());
+        } catch (JsonProcessingException e) {
+            IO.println("Failure while processing Json");
+            throw new RuntimeException(e);
+        }
     }
+
+
+    return Stream.of(
+                    messages,
+                    toolMessagesToAppend
+            )
+            .flatMap(Collection::stream)
+            .toList();
 }
